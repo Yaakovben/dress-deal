@@ -1,0 +1,278 @@
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ====================================================
+// USER
+// ====================================================
+model User {
+  id            String         @id @default(uuid())
+  fullName      String
+  email         String         @unique
+  phone         String?        @unique
+  passwordHash  String?
+  city          String?
+  role          Role           @default(USER)
+  isActive      Boolean        @default(true)
+
+  dresses       Dress[]
+  bookings      Booking[]
+  sentMessages  Message[]      @relation("SentMessages")
+  recvMessages  Message[]      @relation("ReceivedMessages")
+  notifications Notification[]
+  reviews       Review[]
+  payouts       Payout[]
+
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@index([city])
+  @@index([role])
+  @@index([isActive])
+}
+
+enum Role {
+  USER
+  DESIGNER
+  ADMIN
+}
+
+model Dress {
+  id             String        @id @default(uuid())
+  ownerId        String
+  owner          User          @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+
+  title          String
+  slug           String        @unique
+  description    String
+  pricePerDay    Decimal       @db.Decimal(10, 2)
+  originalPrice  Decimal?      @db.Decimal(10, 2)
+  size           String
+  color          String
+  category       String
+  city           String
+  isActive       Boolean       @default(true)
+  attributes     Json?
+
+  images         DressImage[]
+  bookings       Booking[]
+  blockedDates   BlockedDate[]
+  messages       Message[]
+  reviews        Review[]
+
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@index([ownerId])
+  @@index([city])
+  @@index([size])
+  @@index([color])
+  @@index([category])
+  @@index([isActive])
+}
+
+model DressImage {
+  id          String   @id @default(uuid())
+  dressId     String
+  dress       Dress    @relation(fields: [dressId], references: [id], onDelete: Cascade)
+
+  url         String
+  publicId    String
+  sortOrder   Int      @default(0)
+  isPrimary   Boolean  @default(false)
+
+  createdAt   DateTime @default(now())
+
+  @@index([dressId, sortOrder])
+}
+
+model BlockedDate {
+  id          String   @id @default(uuid())
+  dressId     String
+  dress       Dress    @relation(fields: [dressId], references: [id], onDelete: Cascade)
+
+  startDate   DateTime
+  endDate     DateTime
+  reason      String?
+
+  createdAt   DateTime @default(now())
+
+  @@index([dressId, startDate, endDate])
+}
+
+model Booking {
+  id             String        @id @default(uuid())
+  dressId        String
+  dress          Dress         @relation(fields: [dressId], references: [id], onDelete: Restrict)
+  renterId       String
+  renter         User          @relation(fields: [renterId], references: [id], onDelete: Restrict)
+
+  startDate      DateTime
+  endDate        DateTime
+  expiresAt      DateTime?
+
+  totalAmount    Decimal       @db.Decimal(10, 2)
+  feeAmount      Decimal       @db.Decimal(10, 2)
+  ownerPayout    Decimal       @db.Decimal(10, 2)
+
+  status         BookingStatus @default(PENDING)
+
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  payment        Payment?
+  payout         Payout?
+  review         Review?
+
+  @@index([dressId, startDate, endDate])
+  @@index([renterId])
+  @@index([status])
+  @@index([expiresAt])
+}
+
+enum BookingStatus {
+  PENDING
+  ACCEPTED
+  PAYMENT_PENDING
+  CONFIRMED
+  ACTIVE
+  RETURNED
+  COMPLETED
+  CANCELLED
+  REFUNDED
+}
+
+model Payment {
+  id                 String          @id @default(uuid())
+  bookingId          String          @unique
+  booking            Booking         @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+
+  provider           PaymentProvider
+  providerPaymentId  String?         @unique
+  amount             Decimal         @db.Decimal(10, 2)
+  status             PaymentStatus   @default(PENDING)
+  paidAt             DateTime?
+  refundedAt         DateTime?
+
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  @@index([status])
+  @@index([provider])
+}
+
+enum PaymentProvider {
+  PAYME
+  GROW
+}
+
+enum PaymentStatus {
+  PENDING
+  AUTHORIZED
+  PAID
+  FAILED
+  CANCELLED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+model Payout {
+  id                String          @id @default(uuid())
+  bookingId         String          @unique
+  booking           Booking         @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  ownerId           String
+  owner             User            @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+
+  amount            Decimal         @db.Decimal(10, 2)
+  provider          PaymentProvider
+  providerPayoutId  String?         @unique
+  status            PayoutStatus    @default(PENDING)
+  paidAt            DateTime?
+
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([ownerId])
+  @@index([status])
+}
+
+enum PayoutStatus {
+  PENDING
+  PROCESSING
+  PAID
+  FAILED
+  CANCELLED
+}
+
+model Message {
+  id          String   @id @default(uuid())
+  dressId     String
+  dress       Dress    @relation(fields: [dressId], references: [id], onDelete: Cascade)
+  senderId    String
+  sender      User     @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  receiverId  String
+  receiver    User     @relation("ReceivedMessages", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  content     String
+  isRead      Boolean  @default(false)
+
+  createdAt   DateTime @default(now())
+
+  @@index([dressId, createdAt])
+  @@index([senderId])
+  @@index([receiverId])
+}
+
+model Notification {
+  id          String             @id @default(uuid())
+  userId      String
+  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  title       String
+  message     String
+  type        NotificationType
+  isRead      Boolean            @default(false)
+
+  createdAt   DateTime           @default(now())
+
+  @@index([userId, isRead])
+  @@index([userId, createdAt])
+}
+
+enum NotificationType {
+  NEW_BOOKING
+  BOOKING_ACCEPTED
+  BOOKING_REJECTED
+  PAYMENT_REQUIRED
+  PAYMENT_RECEIVED
+  BOOKING_CONFIRMED
+  BOOKING_CANCELLED
+  BOOKING_COMPLETED
+  NEW_MESSAGE
+  REVIEW_RECEIVED
+  SYSTEM
+}
+
+model Review {
+  id          String   @id @default(uuid())
+  bookingId   String   @unique
+  booking     Booking  @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  dressId     String
+  dress       Dress    @relation(fields: [dressId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  rating      Int
+  comment     String?
+
+  createdAt   DateTime @default(now())
+
+  @@index([dressId])
+  @@index([userId])
+}
